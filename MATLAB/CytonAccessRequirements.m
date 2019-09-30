@@ -31,6 +31,7 @@ robot = SerialLink(robotJoints, 'name','Hans Cute Robot');
 %% Running the example data
 
 % Continously plot the values from cyton_q
+robot.plot(cyton_q(1,:));
 speed = 3;
 for i = 1:speed:size(cyton_q,1)
     robot.animate(cyton_q(i,:));
