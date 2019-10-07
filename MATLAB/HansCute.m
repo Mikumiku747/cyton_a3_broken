@@ -1,5 +1,5 @@
-classdef CytonGamma300 < handle
-    % CytonGamma300 Cyton Gamma 300 robot class.
+classdef HansCute < handle
+    % Han's robotics cute robot class.
     % For use with Peter Corke's Robotics, Vision and Control Toolbox.
     % We inherit from handle because this allows us to modify the robots
     % state and keep those changes preserved in class methods (for example,
@@ -19,10 +19,14 @@ classdef CytonGamma300 < handle
         ];    
         nJoints = 7;    % Number of joints in the robot;
         maxJointVel = pi/20;    % Largest movement the robot can make in one time step
+        moveJFrequency = 20;    % Rate at which joint moves should run
+        moveLFrequency = 20;    % Rate at which tool moves should run
     end
     properties
         robotModel      % SerialLink object describing the robot
         joints          % Joint Positions
+        realRobotHAL    % HAL for the actual robot itself
+        moveRealRobot   % Hardware State (simulation or actual)
     end
     
     methods
@@ -35,10 +39,10 @@ classdef CytonGamma300 < handle
             obj.joints = joints;
         end
         
-        function obj = CytonGamma300(name)
+        function obj = HansCute(name)
             % Creates a new Cyton 300 Robot Object. Default pose is 0
             if nargin < 1
-                name = "Cyton Gamma 300";
+                name = "Hans Cute Robot";
             end
             links = Link.empty(obj.nJoints, 0);
             for i = 1:size(obj.DHParams,1)
@@ -51,6 +55,14 @@ classdef CytonGamma300 < handle
             obj.joints = zeros(1, obj.nJoints);
         end
         
+        function connectToHW(obj)
+            % Connects and initialises an actual robot
+            % TODO Not finished yet
+            obj.realRobotHAL = HansCuteHAL();
+            obj.realRobotHAL.homeRobot();
+            obj.syncHW();
+        end
+        
         function teach(obj)
             % Opens a figure with the robot for teaching new poses
             obj.robotModel.teach(obj.joints);
@@ -58,7 +70,7 @@ classdef CytonGamma300 < handle
         
         function joints = getJoints(obj)
             % Gets the current joint positions of the robot
-            joints = obj.robotModel.getpose();
+            joints = obj.robotModel.getpos();
         end
         
         function transform = getEndEffectorTransform(obj, joints)
@@ -102,33 +114,48 @@ classdef CytonGamma300 < handle
         function moveJTraj(obj, trajectory)
             % Animates the robot along a given trajectory
             obj.joints = trajectory(1,:);
+            % The rate limiter means our robot will run at a realistic
+            % speed
+            rateLimiter = rateControl(obj.moveJFrequency);
+            rateLimiter.OverrunAction = 'slip';
             obj.robotModel.plot(trajectory(1,:));
+            rateLimiter.reset();
             for i = 2:size(trajectory,1)
                 obj.joints = trajectory(i,:);
                 obj.robotModel.animate(trajectory(i,:));
+                rateLimiter.waitfor();
             end
         end
         
-        function moveJ(obj, destTrans, steps)
+        function moveJ(obj, destTrans, duration)
             % Moves the robot to the given transform through joint space
-            destJoints = obj.robotModel.ikcon(destTrans, obj.joints);
-            traj = jtraj(obj.joints, destJoints, steps);
+            destJoints = obj.robotModel.ikcon(destTrans, obj.getJoints);
+            traj = jtraj(obj.joints, destJoints, duration * obj.moveJFrequency);
             obj.moveJTraj(traj);
         end
         
-        function moveL(obj, destPos, accuracy)
+        function moveL(obj, destPos, duration, accuracy)
             % Moves the robot to the given position (maintains orientation)
             % through cartesian space. 
-            if (nargin < 3)
+            if (nargin < 4)
                 accuracy = 0.005;
             end
+            % Compute the speed to move at based on duration
+            moveSpeed = obj.distanceTo(destPos) / duration;
+            % A rate limiter allows us to run our loop at the desired
+            % frequency
+            rateLimiter = rateControl(obj.moveLFrequency);
+            rateLimiter.OverrunAction = 'slip';
             % Begin to move towards that in step increments until we reach
             % the desired destination
             obj.plot();
+            rateLimiter.reset()
             while (obj.distanceTo(destPos) > accuracy)
                 % Compute the step in the right direction
                 diff = destPos - obj.getEndEffectorPosition;
-                positionVelocities = diff ./ norm(diff) .* accuracy;
+                diffDir = diff / norm(diff);
+                % Compute the velocity for this timestep
+                positionVelocities = diffDir .* (moveSpeed / obj.moveLFrequency);
                 velocities = [positionVelocities' [0 0 0]]'; 
                 % Use the jacobian to get the required joint velocities
                 jointVelocities = pinv(obj.getJacobian) * velocities;
@@ -141,6 +168,7 @@ classdef CytonGamma300 < handle
                 % Apply the joint velocities (including plot)
                 obj.joints = obj.joints + jointVelocities';
                 obj.animate();
+                rateLimiter.waitfor();
             end
             
         end
@@ -151,6 +179,5 @@ classdef CytonGamma300 < handle
             robotPos = robotTrans(1:3,4);
             dist = norm(pos - robotPos);
         end
-    end
-    
+    end    
 end

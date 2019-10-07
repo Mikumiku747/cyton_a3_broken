@@ -10,21 +10,14 @@ redThresh = 0.255; % Threshold for red detection
 greenThresh = 0.24; % Threshold for green detection
 blueThresh = 0.04; % Threshold for blue detection
 
-vid = videoinput('winvideo', 1, 'YUY2_640x480');
-
-% Set the properties of the video object
-set(vid, 'FramesPerTrigger', inf);
-set(vid, 'ReturnedColorspace', 'rgb')
-vid.FrameGrabInterval = 5;
-
-%start the video aquisition here
-start(vid)
+% Create the webcam
+camera = webcam('EyeToy USB camera Namtai');
 
 % Set a loop that stop after 100 frames of aquisition
-while(vid.FramesAcquired<=inf)
+while(true)
     
     % Get the snapshot of the current frame
-    rgbFrame = getsnapshot(vid);   
+    rgbFrame = camera.snapshot();   
     imshow(rgbFrame)
     %1 for red, 2 for green, and 3 for blue.
     redChannel  = rgbFrame(:, :, 1);
