@@ -35,7 +35,10 @@ classdef HansCute < handle
         function obj = set.joints(obj, joints)
             % Validation that the new joint position is within joint limits
             for i = 1:obj.nJoints
-                % TODO: Validation here
+                if joints(i) > deg2rad(obj.DHParams(i,4)/2) || ...
+                   joints(i) < deg2rad(-obj.DHParams(i,4)/2)
+                    error("Joint values exceed joint limits.");
+                end
             end
             obj.joints = joints;
         end
@@ -54,14 +57,20 @@ classdef HansCute < handle
             end
             obj.robotModel = SerialLink(links, 'name', name);
             obj.joints = zeros(1, obj.nJoints);
+            obj.moveRealRobot = false;
         end
         
         function connectToHW(obj)
             % Connects and initialises an actual robot
-            % TODO Not finished yet
             obj.realRobotHAL = HansCuteHAL();
             obj.realRobotHAL.homeRobot();
             obj.syncHW();
+        end
+        
+        function syncHW(obj)
+            % Synchronises the model of the robot with the actual running
+            % robot.
+            % TODO read the robot position
         end
         
         function teach(obj)
@@ -110,6 +119,27 @@ classdef HansCute < handle
         function animate(obj)
             % Updates the plot of a robot
             obj.robotModel.animate(obj.joints);
+        end
+        
+        function jogMode(obj)
+            % Puts the robot into jog mode under controller navigation
+            % Runs until the stop button is pressed.
+            control = joystickJog(1);
+            control.runFrequency = obj.moveLFrequency;
+            % Rate controller lets us run at 20Hz
+            rateLimiter = rateControl(obj.moveLFrequency);
+            rateLimiter.reset();
+            obj.plot();
+            while ~control.getStopStatus()
+                % Read the controller Input
+                toolVel = control.generateJogMovements();
+                % Generate joint velocities using inverse jacobian
+                jointVel = toolVel * pinv(obj.getJacobian)';
+                % Apply to robot model and animate
+                obj.joints = obj.joints + jointVel;
+                obj.animate();
+                rateLimiter.waitfor();
+            end
         end
         
         function moveJTraj(obj, trajectory)
