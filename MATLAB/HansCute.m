@@ -18,10 +18,11 @@ classdef HansCute < handle
             0.130   0       180.0       300.0       180.0
         ];    
         nJoints = 7;    % Number of joints in the robot;
-        maxJointVel = pi/20;    % Largest movement the robot can make in one time step
         moveJFrequency = 20;    % Rate at which joint moves should run
         moveLFrequency = 20;    % Rate at which tool moves should run
-    end
+        maxJointVel = ...       % Largest movement the robot can make in one time step
+            (pi/2) / 20;
+        end
     properties
         robotModel      % SerialLink object describing the robot
         joints          % Joint Positions
@@ -112,47 +113,66 @@ classdef HansCute < handle
         end
         
         function moveJTraj(obj, trajectory)
-            % Animates the robot along a given trajectory
-            obj.joints = trajectory(1,:);
+            % Moves the robot through a set of joint positions
             % The rate limiter means our robot will run at a realistic
             % speed
             rateLimiter = rateControl(obj.moveJFrequency);
             rateLimiter.OverrunAction = 'slip';
-            obj.robotModel.plot(trajectory(1,:));
+            obj.joints = trajectory(1,:);
+            obj.plot();
             rateLimiter.reset();
             for i = 2:size(trajectory,1)
                 obj.joints = trajectory(i,:);
-                obj.robotModel.animate(trajectory(i,:));
+                obj.animate();
                 rateLimiter.waitfor();
             end
         end
         
-        function moveJ(obj, destTrans, duration)
-            % Moves the robot to the given transform through joint space
+        function traj = planJTraj(obj, destTrans, duration)
+            % Plans a jointspace movement and produces a trajectory
+            
+            % Solve the destination position and interpolate over to it
             destJoints = obj.robotModel.ikcon(destTrans, obj.getJoints);
             traj = jtraj(obj.joints, destJoints, duration * obj.moveJFrequency);
+        end
+        
+        function moveJ(obj, dest, duration)
+            % Plans and moves through a trajectory
+            traj = obj.planJTraj(dest, duration);
             obj.moveJTraj(traj);
         end
         
-        function moveL(obj, destPos, duration, accuracy)
-            % Moves the robot to the given position (maintains orientation)
-            % through cartesian space. 
-            if (nargin < 4)
-                accuracy = 0.005;
-            end
-            % Compute the speed to move at based on duration
-            moveSpeed = obj.distanceTo(destPos) / duration;
+        function moveLTraj(obj, trajectory)
+            % Move through a set of joint velocities
+            
             % A rate limiter allows us to run our loop at the desired
             % frequency
             rateLimiter = rateControl(obj.moveLFrequency);
             rateLimiter.OverrunAction = 'slip';
-            % Begin to move towards that in step increments until we reach
-            % the desired destination
             obj.plot();
             rateLimiter.reset()
-            while (obj.distanceTo(destPos) > accuracy)
+            for i = 1:size(trajectory,1)
+                obj.joints = obj.joints + trajectory(i,:);
+                obj.animate();
+                rateLimiter.waitfor();
+            end
+        end
+        
+        function traj = planLTraj(obj, destPos, duration, accuracy)
+            % Moves the robot to the given position (maintains orientation)
+            % through cartesian space. 
+            
+            % Compute the speed to move at based on duration
+            moveSpeed = obj.distanceTo(destPos) / duration;
+            % Setup the trajectory
+            traj = [];
+            % Begin to move towards that in step increments until we reach
+            % the desired destination
+            plannedJoints = obj.joints;
+            diff = destPos - obj.getEndEffectorPosition(plannedJoints);
+            while (norm(diff) > accuracy)
                 % Compute the step in the right direction
-                diff = destPos - obj.getEndEffectorPosition;
+                diff = destPos - obj.getEndEffectorPosition(plannedJoints);
                 diffDir = diff / norm(diff);
                 % Compute the velocity for this timestep
                 positionVelocities = diffDir .* (moveSpeed / obj.moveLFrequency);
@@ -165,12 +185,20 @@ classdef HansCute < handle
                         error('Stopping due to excessive joint velocities, check for singularities.');
                     end
                 end
-                % Apply the joint velocities (including plot)
-                obj.joints = obj.joints + jointVelocities';
-                obj.animate();
-                rateLimiter.waitfor();
+                % Store the velocity in the trajectory
+                traj = [traj' jointVelocities']';
+                % Apply the joint velocities
+                plannedJoints = plannedJoints + jointVelocities';
             end
-            
+        end
+        
+        function moveL(obj, destPos, duration, accuracy)
+            % Plans and moves the robot through toolspace
+            if (nargin < 4)
+                accuracy = 0.005;
+            end
+            traj = obj.planLTraj(destPos, duration, accuracy);
+            obj.moveLTraj(traj);
         end
         
         function dist = distanceTo(obj, pos)

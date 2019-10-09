@@ -12,9 +12,11 @@ classdef HansCuteHAL < handle
         homeRobotCli    % Home Robot Client (caller)
     end
     properties (Constant)
-        jointNames = ...% Joint Names for use in trajectory messages
+        jointNames = ...    % Joint Names for use in trajectory messages
             ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',...
             'joint7'];
+        maxJointVel = ...   % Max value for joint velocities (sanity check)
+            pi/2;           % Max value of 90 degrees per second
     end
     
     methods
@@ -60,10 +62,11 @@ classdef HansCuteHAL < handle
             obj.commandPub.send(autoMoveMsg);
         end
         
-        function moveJTraj(obj, traj, frequency)
-            % Makes the actual robot do a jointspace move. 
-            % This will plan out the whole trajectory and then send it to
-            % the robot. Frequency is the time between the joint positions
+        function movePTraj(obj, traj, frequency)
+            % Moves the robot through the list of joints
+            % Frequency is the frequency at which the robot should move
+            % through the points provided (positions per second).
+            
             % Compute the time between joints
             period = 1/frequency;
             % Create the messages to send
@@ -78,10 +81,52 @@ classdef HansCuteHAL < handle
                 moveMsg.Points(i).TimeFromStart.Sec = s;
                 moveMsg.Points(i).TimeFromStart.Nsec = ns;
                 % Load the point in the trajetory
-                moveMsg.Points(i).Positions = joints';
+                moveMsg.Points(i).Positions = traj(i,:);
             end
             % Send the trajectory to the robot
             obj.commandPub.send(moveMsg);
+        end
+        
+        function moveVTraj(obj, traj, frequency)
+           % Apply the given velocities to the robot.
+           % traj is a set of velocities each lasting for 1/frequency
+           % seconds. Note that a zero velocity message will be appened to
+           % the end of the list but you should include your own one for
+           % sanity reasons.
+           
+           % Compute the time between samples
+           period = 1/frequency;
+           % Create the messages to send
+           moveMsg = rosmsg(obj.commandPub);
+           moveMsg.JointNames = obj.jointNames;
+           % Load each of the trajectory points into the message
+           for i = 1:size(traj,1)
+                % Create the trajectory point
+                moveMsg.Points(i) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
+                % Mark the time when this point should be reached
+                [s, ns] = splitTime(period * (i / size(traj,1)));
+                moveMsg.Points(i).TimeFromStart.Sec = s;
+                moveMsg.Points(i).TimeFromStart.Nsec = ns;
+                % Check to see if any of the joint velocities are over the
+                % max.
+                if (norm(double(traj(i,:) >= obj.maxJointVel / frequency)) > 0)
+                    error("Large joint velocity detected");
+                end
+                % Load the point in the trajetory
+                moveMsg.Points(i).Velocities = traj(i,:);
+           end
+           % Add a zero velocity move to the end
+           lasti = size(traj,1) + 1;
+           pt = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
+           [s, ns] = splitTime(period * lasti);
+           pt.TimeFromStart.Sec = s;
+           pt.TimeFromStart.Nsec = ns;
+           % Load the final zero velocity set
+           pt.Velocities = zeros(1,size(traj,2));
+           % Append to the end of the trajectory
+           moveMsg.Points(lasti) = pt;
+           % Send the trajectory to the robot.
+           obj.commandPub.send(moveMsg);
         end
     end
 end
