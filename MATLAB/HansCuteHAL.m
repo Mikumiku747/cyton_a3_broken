@@ -13,8 +13,8 @@ classdef HansCuteHAL < handle
     end
     properties (Constant)
         jointNames = ...    % Joint Names for use in trajectory messages
-            ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',...
-            'joint7'];
+            {'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',...
+            'joint7'};
         maxJointVel = ...   % Max value for joint velocities (sanity check)
             pi/2;           % Max value of 90 degrees per second
     end
@@ -25,8 +25,8 @@ classdef HansCuteHAL < handle
             % You should only make one of these
             obj.commandPub = rospublisher('/cute_arm_controller/command');
             obj.stateSub = rossubscriber('/cute_arm_controller/state');
-            obj.enableMotorsCli = rossvcclient('/cute_torque_enable');
-            obj.homeRobotCli = rossvcclient('/cute_go_home');
+            %obj.enableMotorsCli = rossvcclient('/cute_torque_enable');
+            %obj.homeRobotCli = rossvcclient('/cute_go_home');
         end
         
         function enableRobot(obj)
@@ -55,7 +55,7 @@ classdef HansCuteHAL < handle
             % situation.
             % Create the move command
             autoMoveMsg = rosmessage(obj.commandPub);
-            autoMoveMsg.Points = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
+            autoMoveMsg.Points(1) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
             autoMoveMsg.Points.Positions = joints';
             autoMoveMsg.Points.TimeFromStart.Sec = duration;
             % Send the message to the robot
@@ -70,14 +70,14 @@ classdef HansCuteHAL < handle
             % Compute the time between joints
             period = 1/frequency;
             % Create the messages to send
-            moveMsg = rosmsg(obj.commandPub);
+            moveMsg = rosmessage(obj.commandPub);
             moveMsg.JointNames = obj.jointNames;
             % Create the trajectory
             for i = 1:size(traj,1)
                 % Create the trajectory point
                 moveMsg.Points(i) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
                 % Mark the time when this point should be reached
-                [s, ns] = splitTime(period * (i / size(traj,1)));
+                [s, ns] = splitTime(period * i);
                 moveMsg.Points(i).TimeFromStart.Sec = s;
                 moveMsg.Points(i).TimeFromStart.Nsec = ns;
                 % Load the point in the trajetory
@@ -97,14 +97,14 @@ classdef HansCuteHAL < handle
            % Compute the time between samples
            period = 1/frequency;
            % Create the messages to send
-           moveMsg = rosmsg(obj.commandPub);
+           moveMsg = rosmessage(obj.commandPub);
            moveMsg.JointNames = obj.jointNames;
            % Load each of the trajectory points into the message
            for i = 1:size(traj,1)
                 % Create the trajectory point
                 moveMsg.Points(i) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
                 % Mark the time when this point should be reached
-                [s, ns] = splitTime(period * (i / size(traj,1)));
+                [s, ns] = splitTime(period * i);
                 moveMsg.Points(i).TimeFromStart.Sec = s;
                 moveMsg.Points(i).TimeFromStart.Nsec = ns;
                 % Check to see if any of the joint velocities are over the
@@ -128,11 +128,18 @@ classdef HansCuteHAL < handle
            % Send the trajectory to the robot.
            obj.commandPub.send(moveMsg);
         end
+        
+        function joints = getActualJoints(obj)
+            % Gets the joint values of the real robot
+            jMsg = obj.stateSub.receive;
+            joints = jMsg.Actual.Positions';
+        end
+        
     end
 end
 
 function [sec, nanosec] = splitTime(time)
     % Splits the time into whole and nanoseconds
     sec = floor(time);
-    nanosec = (time - floor(time)) * 1000000;
+    nanosec = floor((time - floor(time)) * 1000000000);
 end

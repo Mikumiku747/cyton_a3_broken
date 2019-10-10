@@ -20,7 +20,7 @@ classdef JoystickJog < handle
     end
     
     methods
-        function obj = joystickJog(id)
+        function obj = JoystickJog(id)
             % Initialises the joystick
             if nargin < 1
                 id = 1;
