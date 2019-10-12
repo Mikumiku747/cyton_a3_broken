@@ -7,7 +7,11 @@ function cleanSpot()
     robot = HansCute;
     robot.connectToHW;
     
+    close 1
+    
     % Take and annotate the picture
+    disp 'Getting Picture';
+    hold off
     c = webcam('EyeToy USB camera Namtai');
     im = c.snapshot();
     imshow(im);
@@ -15,10 +19,13 @@ function cleanSpot()
     objs = colorDetect(im);
     renderObjData(objs);
     hold off
-    pause(3);
     
+    % Wait for the teach button to be pressed again
+    while ~robot.controller.getTeachStatus
+    end
     
     % Teach the position
+    disp 'Learning cleaning location';
     robot.plot();
     robot.teachPosition;
     baseSpot = robot.getEndEffectorTransform
@@ -39,7 +46,7 @@ function cleanSpot()
     robot.moveJ(baseSpot, 0.75, accuracy);
     for i = 1:4
 %         robot.moveL(cPoints{i}, accuracy);
-        robot.moveJ(cPoints{i}, 0.25, accuracy);
+        robot.moveJ(cPoints{i}, 0.2, accuracy);
     end
     robot.moveJ(above, 3, accuracy);
     

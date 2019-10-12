@@ -8,5 +8,6 @@ function renderObjData(objects)
             'LineWidth',2);
         % Render a crosshair on the centre
         plot(objects(i).Centroid(1), objects(i).Centroid(2),'-m+');
+        text(objects(i).Centroid(1)+5, objects(i).Centroid(2)+5, string(i));
     end
 end
