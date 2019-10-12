@@ -3,7 +3,6 @@ classdef JoystickJog < handle
     
     properties
         joystick                % Joystick Object
-        runFrequency = 20;      % Estimated freqeuncy of control updates. (Hz)
         jogLinearSpeed = 0.1;   % Linear move speed (m/s)
         jogRotarySpeed = pi/4;  % Rotary move speed (rad/s)
     end
@@ -16,7 +15,8 @@ classdef JoystickJog < handle
         rzAxisMinus = 3;        % Rotation Z axis negative ID.
         ZupButton = 6;          % Z Axis Positive Button
         zDownButton = 5;        % Z Axis Negative Button
-        stopButton = 2;
+        stopButton = 2;         % Stop Robot Button
+        teachButton = 4;        % For teaching the robot positions
     end
     
     methods
@@ -32,26 +32,26 @@ classdef JoystickJog < handle
             % Generates tool velocities for jogging based on input.
             [axes, buttons, ~] = read(obj.joystick);
             % The X and Y movement axes are simple
-            xVel = axes(obj.xAxisID) * obj.jogLinearSpeed / obj.runFrequency;
-            yVel = -axes(obj.yAxisID) * obj.jogLinearSpeed / obj.runFrequency;
+            xVel = axes(obj.xAxisID) * obj.jogLinearSpeed;
+            yVel = -axes(obj.yAxisID) * obj.jogLinearSpeed;
             % We have to convert the buttons to double to use them in
             % maths, and we also have to take the difference between the up
             % and down buttons to get the robot moving properly.
             zVel = double(buttons(obj.ZupButton)) * 0.5 ...
-                * obj.jogLinearSpeed / obj.runFrequency ...
+                * obj.jogLinearSpeed ...
                 - double(buttons(obj.zDownButton)) * 0.5 ...
-                * obj.jogLinearSpeed / obj.runFrequency;
+                * obj.jogLinearSpeed;
             % The X and Y rotary axes are simple as well
-            xRot = -axes(obj.rxAxisID) * obj.jogRotarySpeed / obj.runFrequency;
-            yRot = axes(obj.ryAxisID) * obj.jogRotarySpeed / obj.runFrequency;
+            xRot = -axes(obj.rxAxisID) * obj.jogRotarySpeed;
+            yRot = axes(obj.ryAxisID) * obj.jogRotarySpeed;
             % We have to do some processing with the triggers for the Z
             % rotation, since each trigger starts at -1 for released and
             % goes to 1 for pressed. We scale them down and then take the
             % difference of the positive and negative triggers.
             zRot = 0.5 * (axes(obj.rzAxisPlus) + 1) ...
-                * obj.jogRotarySpeed / obj.runFrequency ...
+                * obj.jogRotarySpeed ...
                 - 0.5 * (axes(obj.rzAxisMinus) + 1) ...
-                * obj.jogRotarySpeed / obj.runFrequency;
+                * obj.jogRotarySpeed;
             % Construct the final output vector
             velocities = [xVel yVel zVel xRot yRot zRot];
         end
@@ -60,6 +60,12 @@ classdef JoystickJog < handle
             % Gets the status of the STOP button (Circle on DualShock4)
             [~, button, ~] = read(obj.joystick);
             status = button(obj.stopButton);
+        end
+        
+        function status = getTeachStatus(obj)
+            % Gets the status of the Teach button (Square on the DS4)
+            [~, button, ~] = read(obj.joystick);
+            status = button(obj.teachButton);
         end
         
         function closeController(obj)
