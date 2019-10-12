@@ -6,15 +6,13 @@ classdef HansCuteHAL < handle
     % power controls. 
     
     properties
-        commandPub      % Position Command Publisher (writer)
-        stateSub        % Position State Subscriber (reader)
-        enableMotorsCli % Motor Control Client (caller)
-        homeRobotCli    % Home Robot Client (caller)
+        positionPub     % Position Publisher (writer)
+        velocityPub     % Velocity Publisher (writer) 
+        stateSub        % Joint State Subscriber (reader)
+        enableCli       % Motor Enable Client (caller)
+        homeCli         % Home Robot Client (caller)
     end
     properties (Constant)
-        jointNames = ...    % Joint Names for use in trajectory messages
-            {'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',...
-            'joint7'};
         maxJointVel = ...   % Max value for joint velocities (sanity check)
             pi/2;           % Max value of 90 degrees per second
     end
@@ -22,69 +20,73 @@ classdef HansCuteHAL < handle
     methods
         function obj = HansCuteHAL()
             % Creates a new hardware connection
-            % You should only make one of these
-            obj.commandPub = rospublisher('/cute_arm_controller/command');
-            obj.stateSub = rossubscriber('/cute_arm_controller/state');
-            %obj.enableMotorsCli = rossvcclient('/cute_torque_enable');
-            %obj.homeRobotCli = rossvcclient('/cute_go_home');
+            obj.positionPub = rospublisher('/cyton_position_commands');
+            obj.velocityPub = rospublisher('/cyton_velocity_commands');
+            obj.stateSub = rossubscriber('/joint_states');
+            obj.enableCli = rossvcclient('/enableCyton');
+            obj.homeCli = rossvcclient('/goHome');
         end
         
         function enableRobot(obj)
             % Enables the motors in the robot.
-            enableMotorsMsg = rosmsg(obj.enableMotorsCli);
-            obj.enableMotorsCli.call(enableMotorsMsg, 'data', true);
+            enableMotorsMsg = rosmessage(obj.enableCli);
+            enableMotorsMsg.TorqueEnable = true;
+            obj.enableCli.call(enableMotorsMsg);
         end
         
         function disableRobot(obj)
             % Disables the motors in the robot.
             % WATCH OUT, the robot may fall if motors are disabled.
-            disableMotorsMsg = rosmsg(obj.enableMotorsCli);
-            obj.enableMotorsCli.call(disableMotorsMsg, 'data', false);
+            disableMotorsMsg = rosmessage(obj.enableCli);
+            disableMotorsMsg.TorqueEnable = false;
+            obj.enableCli.call(disableMotorsMsg);
         end
         
         function homeRobot(obj)
             % Moves the robot into the home position
-            homeRobotMsg = rosmsg(obj.homeRobotCli);
-            ojb.homeRobotCli.call(homeRobotMsg, 'data', true);
+            homeRobotMsg = rosmessage(obj.homeCli);
+            obj.homeCli.call(homeRobotMsg);
         end
-        
-        function autoMove(obj, joints, duration)
-            % Automatically moves the robot to the given position.
-            % Does not do trajectory planning or collision avoidance, used
-            % for setting the robot to specific positions in a safe
-            % situation.
-            % Create the move command
-            autoMoveMsg = rosmessage(obj.commandPub);
-            autoMoveMsg.Points(1) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
-            autoMoveMsg.Points.Positions = joints';
-            autoMoveMsg.Points.TimeFromStart.Sec = duration;
-            % Send the message to the robot
-            obj.commandPub.send(autoMoveMsg);
-        end
+
+%         DISABLED: We never ended up using this, running trajectories
+%         worked just fine
+%         function autoMove(obj, joints, duration)
+%             % Automatically moves the robot to the given position.
+%             % Does not do trajectory planning or collision avoidance, used
+%             % for setting the robot to specific positions in a safe
+%             % situation.
+%             % Create the move command
+%             autoMoveMsg = rosmessage(obj.commandPub);
+%             autoMoveMsg.Points(1) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
+%             autoMoveMsg.Points.Positions = joints';
+%             autoMoveMsg.Points.TimeFromStart.Sec = duration;
+%             % Send the message to the robot
+%             obj.commandPub.send(autoMoveMsg);
+%         end
         
         function movePTraj(obj, traj, frequency)
-            % Moves the robot through the list of joints
+            % Moves the robot through the list of joint positions
             % Frequency is the frequency at which the robot should move
             % through the points provided (positions per second).
             
-            % Compute the time between joints
-            period = 1/frequency;
             % Create the messages to send
-            moveMsg = rosmessage(obj.commandPub);
-            moveMsg.JointNames = obj.jointNames;
-            % Create the trajectory
-            for i = 1:size(traj,1)
-                % Create the trajectory point
-                moveMsg.Points(i) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
-                % Mark the time when this point should be reached
-                [s, ns] = splitTime(period * i);
-                moveMsg.Points(i).TimeFromStart.Sec = s;
-                moveMsg.Points(i).TimeFromStart.Nsec = ns;
-                % Load the point in the trajetory
-                moveMsg.Points(i).Positions = traj(i,:);
+            positionMsg = rosmessage(obj.positionPub);
+            % Use a rate limiter to send the messages consistently
+            rateLimiter = rateControl(frequency);
+            rateLimiter.OverrunAction = 'slip';
+            % Send each point in the trajectory
+            rateLimiter.reset();
+            for i = 1:(size(traj,1) + frequency*2)
+                % Load the joint positions into the message
+                if i < size(traj,1)
+                    positionMsg.Data = traj(i,:);
+                else
+                    positionMsg.Data = traj(size(traj,1),:);
+                end
+                % Send the trajectory to the robot
+                obj.positionPub.send(positionMsg);
+                rateLimiter.waitfor();
             end
-            % Send the trajectory to the robot
-            obj.commandPub.send(moveMsg);
         end
         
         function moveVTraj(obj, traj, frequency)
@@ -94,52 +96,37 @@ classdef HansCuteHAL < handle
            % the end of the list but you should include your own one for
            % sanity reasons.
            
-           % Compute the time between samples
-           period = 1/frequency;
            % Create the messages to send
-           moveMsg = rosmessage(obj.commandPub);
-           moveMsg.JointNames = obj.jointNames;
+           velocityMsg = rosmessage(obj.velocityPub);
+           % Make the rate limiter to control the rate we send messages
+           rateLimiter = rateControl(frequency);
+           rateLimiter.OverrunAction = 'slip';
            % Load each of the trajectory points into the message
+           rateLimiter.reset();
            for i = 1:size(traj,1)
-                % Create the trajectory point
-                moveMsg.Points(i) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
-                % Mark the time when this point should be reached
-                [s, ns] = splitTime(period * i);
-                moveMsg.Points(i).TimeFromStart.Sec = s;
-                moveMsg.Points(i).TimeFromStart.Nsec = ns;
                 % Check to see if any of the joint velocities are over the
                 % max.
                 if (norm(double(traj(i,:) >= obj.maxJointVel / frequency)) > 0)
                     error("Large joint velocity detected");
                 end
                 % Load the point in the trajetory
-                moveMsg.Points(i).Velocities = traj(i,:);
+                velocityMsg.Data = traj(i,:);
+                % Send the trajectory to the robot.
+                obj.velocityPub.send(velocityMsg);
+%                 tmp = obj.stateSub.receive();
+%                 tmp.Velocity
+                % Rate limiting
+                rateLimiter.waitfor();
            end
-           % Add a zero velocity move to the end
-           lasti = size(traj,1) + 1;
-           pt = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
-           [s, ns] = splitTime(period * lasti);
-           pt.TimeFromStart.Sec = s;
-           pt.TimeFromStart.Nsec = ns;
-           % Load the final zero velocity set
-           pt.Velocities = zeros(1,size(traj,2));
+           velocityMsg.Data = zeros(1, size(traj,2));
            % Append to the end of the trajectory
-           moveMsg.Points(lasti) = pt;
-           % Send the trajectory to the robot.
-           obj.commandPub.send(moveMsg);
+           obj.velocityPub.send(velocityMsg);
         end
         
         function joints = getActualJoints(obj)
             % Gets the joint values of the real robot
             jMsg = obj.stateSub.receive;
-            joints = jMsg.Actual.Positions';
+            joints = jMsg.Position(1:7)';
         end
-        
     end
-end
-
-function [sec, nanosec] = splitTime(time)
-    % Splits the time into whole and nanoseconds
-    sec = floor(time);
-    nanosec = floor((time - floor(time)) * 1000000000);
 end

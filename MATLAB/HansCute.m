@@ -18,15 +18,15 @@ classdef HansCute < handle
             0.130   0       0.0         300.0       180.0
         ];    
         nJoints = 7;    % Number of joints in the robot;
-        moveJFrequency = 20;    % Rate at which joint moves should run
-        moveLFrequency = 20;    % Rate at which tool moves should run
+        moveJFrequency = 12;    % Rate at which joint moves should run
+        moveLFrequency = 12;    % Rate at which tool moves should run
         moveLStepSize = 0.05;   % Toolspace constant velocity
         maxJointVel = ...       % Largest movement the robot can make in one time step
             (pi/2) / 20;
         q0 = ...                % Home Position 
             [0 0 0 0 0 0 0];    % (all zeroes)
         cancelFrequency = ...   % Rate at which the controller is sampled to cancel a movement
-            20;                 % 20 HZ
+            10;                 % 20 HZ
     end
     
     properties
@@ -76,16 +76,24 @@ classdef HansCute < handle
         
         function connectToHW(obj)
             % Connects and initialises an actual robot
+            
+            disp 'Connecting to real robot.'
             obj.realRobotHAL = HansCuteHAL();
-            %obj.realRobotHAL.homeRobot();
+            disp 'Enabling joints.'
+            obj.realRobotHAL.enableRobot();
+            disp 'Homing robot.'
+            obj.realRobotHAL.homeRobot();
+            disp 'Synchronizing plot and simulation.'
+            obj.plot();
             obj.syncHW();
+            disp 'Robot ready to operate.'
             obj.moveRealRobot = true;
         end
         
         function syncHW(obj)
             % Synchronises the model of the robot with the actual running
             % robot.
-            obj.joints = obj.realRobotHAL.getActualJoints;
+            obj.joints = obj.realRobotHAL.getActualJoints();
             obj.animate;
         end
         
@@ -205,8 +213,6 @@ classdef HansCute < handle
             if obj.moveRealRobot
                 disp 'Performing real robot move.'
                 obj.realRobotHAL.movePTraj(traj, obj.moveJFrequency);
-                disp 'Waiting for real robot to complete movement'
-                pause(duration);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
             end
@@ -222,34 +228,28 @@ classdef HansCute < handle
             if obj.moveRealRobot
                 disp 'Performing real robot move.'
                 obj.realRobotHAL.movePTraj(traj, obj.moveJFrequency);
-                % Wait for the actual robot to finish its movements
-                disp 'Waiting for real robot to complete movement'
-                pause(duration);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
             end
         end
 
-%         REMOVED: Since the real robot can no longer move with velocity,
-%         we don't need to bother with it for this one.
-%         
-%         function moveLTraj(obj, trajectory)
-%             % Move through a set of joint velocities
-%             
-%             % A rate limiter allows us to run our loop at the desired
-%             % frequency
-%             rateLimiter = rateControl(obj.moveLFrequency);
-%             rateLimiter.OverrunAction = 'slip';
-%             obj.plot();
-%             rateLimiter.reset()
-%             for i = 1:size(trajectory,1)
-%                 obj.joints = obj.joints + trajectory(i,:);
-%                 obj.animate();
-%                 rateLimiter.waitfor();
-%             end
-%         end
+        function moveLTraj(obj, trajectory)
+            % Move through a set of joint velocities
+            
+            % A rate limiter allows us to run our loop at the desired
+            % frequency
+            rateLimiter = rateControl(obj.moveLFrequency);
+            rateLimiter.OverrunAction = 'slip';
+            obj.plot();
+            rateLimiter.reset()
+            for i = 1:size(trajectory,1)
+                obj.joints = obj.joints + trajectory(i,:);
+                obj.animate();
+                rateLimiter.waitfor();
+            end
+        end
         
-        function traj = planLTraj(obj, destPos, duration, accuracy)
+        function traj = planLTraj(obj, destPos, accuracy)
             % Moves the robot to the given position (maintains orientation)
             % through cartesian space. The trajectory is a set of
             % POSITIONS, not velocities as you'd expect...
@@ -261,6 +261,9 @@ classdef HansCute < handle
             % Begin to move towards that in step increments until we reach
             % the desired destination
             plannedJoints = obj.joints;
+            if size(destPos, 1) < 2
+                destPos = destPos';
+            end
             diff = destPos - obj.getEndEffectorPosition(plannedJoints);
             while (norm(diff) > accuracy)
                 % Compute the step in the right direction
@@ -282,25 +285,22 @@ classdef HansCute < handle
                 % Verify the joints fall within limits
                 obj.validateJoints(plannedJoints);
                 % Store the positions in the trajectory
-                traj = [traj' plannedJoints']';
+                traj = [traj' jointVelocities]';
             end
         end
         
-        function moveL(obj, destPos, duration, accuracy)
+        function moveL(obj, destPos, accuracy)
             % Plans and moves the robot through toolspace
             if (nargin < 4)
                 accuracy = 0.005;
             end
-            traj = obj.planLTraj(destPos, duration, accuracy);
+            traj = obj.planLTraj(destPos, accuracy);
             disp 'Performing simulated robot move'
-            obj.moveJTraj(traj);
+            obj.moveLTraj(traj);
             % Move the real robot now that the virtual one has finished
             if obj.moveRealRobot
                 disp 'Performing real robot move.'
-                obj.realRobotHAL.movePTraj(traj, obj.moveJFrequency);
-                % Wait for the actual robot to finish its movements
-                disp 'Waiting for real robot to complete movement'
-                pause(duration);
+                obj.realRobotHAL.moveVTraj(traj, obj.moveLFrequency);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
             end
