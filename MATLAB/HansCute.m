@@ -24,6 +24,12 @@ classdef HansCute < handle
             [0 0 0 0 0 0 0];    % (all zeroes)
         cancelFrequency = ...   % Rate at which the controller is sampled to cancel a movement
             10;                 % 10 HZ
+        RMRCWeights = ...       % Weighting for the RMRC Solution
+            diag([1 1 1 0.5 0.5 0.5]);
+        linearSpeed = ...       % Linear speed during L trajectories
+            0.2;                % in m/s.
+        angularSpeed = ...      % Angular speed during L trajectories (tool rotation speed)
+            pi/2;               % in rad/s.
     end
     
     properties
@@ -32,7 +38,6 @@ classdef HansCute < handle
         realRobotHAL    % HAL for the actual robot itself
         controller      % Gamepad controller (JoystickJog)
         moveRealRobot   % Hardware State (simulation or actual)
-        RMRCMethod      % Resolved Motion Rate Control Method
         moveJFrequency	% Rate at which joint moves should run
         moveLFrequency	% Rate at which tool moves should run
     end
@@ -56,10 +61,10 @@ classdef HansCute < handle
             if nargin < 3
                 crash = true;
             end
-            if norm(double(abs(joints) > deg2rad(obj.DHParams(:,4)/2)'))
+            if norm(double(abs(joints) > deg2rad(obj.DHParams(:,4))'/2))
                 if crash
                     disp('Joint limit overshoot')
-                    rad2deg(abs(joints) - deg2rad(obj.DHParams(:,4)/2))
+                    rad2deg(abs(joints) - deg2rad(obj.DHParams(:,4)'/2))
                     error('Joints exceed joint limits!');
                 else
                     valid = false;
@@ -312,58 +317,73 @@ classdef HansCute < handle
             end
         end
         
-        function traj = planLTraj(obj, destPos, accuracy)
+        function traj = planLTraj(obj, destTrans, accuracy)
             % Moves the robot to the given position (maintains orientation)
             % through cartesian space. The trajectory is a set of
             % velocities, since the navigation is done in velocity space
             
-            % Compute the speed to move at based on duration
-            moveSpeed = obj.moveLStepSize;
-            % Setup the trajectory
+            % Store the velocity trajectory in here
             traj = [];
-            % Begin to move towards that in step increments until we reach
-            % the desired destination
+            % Plan our trajectory's joints with this variable
             plannedJoints = obj.joints;
-            if size(destPos, 1) < 2
-                destPos = destPos';
-            end
-            diff = destPos - obj.getEndEffectorPosition(plannedJoints);
-            diffDir = diff / norm(diff);
-            while (norm(diff) > accuracy)
-                % Adjust the velocity for fine tuning near the end of the
-                % trajectory
-                if (norm(diff) < accuracy*2)
-                    moveSpeed = obj.moveLStepSize / 2;
+            % Get the inital error
+            currentTrans = obj.getEndEffectorTransform(plannedJoints);
+            pError = destTrans(1:3,4)' - currentTrans(1:3,4)';
+            % Move towards the destination until the error is within
+            % our accuracy range (we only count for position).
+            count = 0;
+            while (norm(pError) > accuracy)
+                count = count + 1;
+                % Re-Compute the error
+                currentTrans = obj.getEndEffectorTransform(plannedJoints);
+                pError = destTrans(1:3,4)' - currentTrans(1:3,4)';
+                rError = tr2rpy(destTrans(1:3,1:3)) - tr2rpy(currentTrans(1:3,1:3));
+                % Clamp the rotational error between -pi & pi.
+                rError = mod(rError+pi, 2*pi)-pi;
+                % Normalise it and set it to the tool speed
+                pUnit = (pError / norm(pError)) * obj.linearSpeed;
+                rUnit = (rError / norm(rError)) * obj.angularSpeed;
+                % If needed, scale the speed down so that we don't
+                % overshoot
+                pStepSize = norm(pUnit / obj.moveLFrequency);
+                if pStepSize > norm(pError)
+                    pVel = pUnit * (norm(pError) / pStepSize);
+                else
+                    pVel = pUnit;
                 end
-                % Compute the step in the right direction
-                diff = destPos - obj.getEndEffectorPosition(plannedJoints);
-                % Compute the velocity
-                positionVelocities = diffDir * moveSpeed;
-                velocities = [positionVelocities' [0 0 0]]'; 
-                % Use the jacobian to get the required joint velocities
-                jointVelocities = pinv(obj.getJacobian) * velocities;
-                % Stop if the joint velocities are too high
-                for i = 1:obj.nJoints
-                    if jointVelocities(i) > obj.maxJointVel
-                        error('Stopping due to excessive joint velocities, check for singularities.');
-                    end
+                rStepSize = norm(rUnit / obj.moveLFrequency);
+                if rStepSize > norm(rError)
+                    rVel = rUnit * (norm(rError) / rStepSize);
+                else
+                    rVel = rUnit;
                 end
-                % Apply the joint velocities
-                plannedJoints = plannedJoints + ...
-                    (jointVelocities' / obj.moveLFrequency);
-                % Verify the joints fall within limits
-                obj.validateJoints(plannedJoints);
-                % Store the positions in the trajectory
-                traj = [traj' jointVelocities]';
+                % Combine these into the final delta transform (with
+                % weighting
+                tVel = [pVel rVel] * obj.RMRCWeights;
+                % Use the jacobian and least squares inverse to get joint
+                % velocities (pinv does the least squares part)
+                qVel = (pinv(obj.getJacobian(plannedJoints)) * tVel')';
+                % Check these don't bring the robot past joint limits
+                obj.validateJoints(plannedJoints + qVel / obj.moveLFrequency);
+                % Check they don't exceed the maximum joint velocity
+                % allowed
+                if norm(double(...
+                        qVel > ones(1,obj.nJoints)*obj.maxJointVel)) > 0
+                    error('Joints exceed max allowable joint velocity.');
+                end
+                % Save to the trajectory
+                traj(count,:) = qVel;
+                % Increment the planned joint positions
+                plannedJoints = plannedJoints + qVel / obj.moveLFrequency;
             end
         end
         
-        function moveL(obj, destPos, accuracy)
+        function moveL(obj, destTrans, accuracy)
             % Plans and moves the robot through toolspace
             if (nargin < 4)
                 accuracy = 0.005;
             end
-            traj = obj.planLTraj(destPos, accuracy);
+            traj = obj.planLTraj(destTrans, accuracy);
             
             % Move the real robot now that the virtual one has finished
             if obj.moveRealRobot

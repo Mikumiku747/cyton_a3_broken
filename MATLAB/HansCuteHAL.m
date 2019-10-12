@@ -18,7 +18,7 @@ classdef HansCuteHAL < handle
     end
     properties (Constant)
         maxJointVel = ...   % Max value for joint velocities (sanity check)
-            pi/2;           % Max value of 90 degrees per second
+            pi;           % Max value of 90 degrees per second
     end
     
     methods
