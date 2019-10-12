@@ -72,55 +72,6 @@ classdef HansCuteHAL < handle
             homeRobotMsg = rosmessage(obj.homeCli);
             obj.homeCli.call(homeRobotMsg);
         end
-
-%         DISABLED: We never ended up using this, running trajectories
-%         worked just fine
-%         function autoMove(obj, joints, duration)
-%             % Automatically moves the robot to the given position.
-%             % Does not do trajectory planning or collision avoidance, used
-%             % for setting the robot to specific positions in a safe
-%             % situation.
-%             % Create the move command
-%             autoMoveMsg = rosmessage(obj.commandPub);
-%             autoMoveMsg.Points(1) = ros.msggen.trajectory_msgs.JointTrajectoryPoint;
-%             autoMoveMsg.Points.Positions = joints';
-%             autoMoveMsg.Points.TimeFromStart.Sec = duration;
-%             % Send the message to the robot
-%             obj.commandPub.send(autoMoveMsg);
-%         end
-        
-        function movePTraj(obj, traj, frequency, accuracy)
-            % Moves the robot through the list of joint positions
-            % Frequency is the frequency at which the robot should move
-            % through the points provided (positions per second).
-            
-            % Create the messages to send
-            positionMsg = rosmessage(obj.positionPub);
-            % Use a rate limiter to send the messages consistently
-            rateLimiter = rateControl(frequency);
-            rateLimiter.OverrunAction = 'slip';
-            % Send each point in the trajectory
-            rateLimiter.reset();
-            for i = 1:(size(traj,1))
-                % Load the joint positions into the message
-                if i < size(traj,1)
-                    positionMsg.Data = traj(i,:);
-                else
-                    positionMsg.Data = traj(size(traj,1),:);
-                end
-                % Send the trajectory to the robot
-                obj.positionPub.send(positionMsg);
-                rateLimiter.waitfor();
-            end
-            % Since the cyton driver is dodgy and takes a while to enter
-            % position, keep sending until we're close enough 
-            error = norm(traj(size(traj,1),:) - obj.getActualJoints);
-            while error > accuracy
-                obj.positionPub.send(positionMsg);
-                rateLimiter.waitfor();
-                error = norm(traj(size(traj,1),:) - obj.getActualJoints);
-            end
-        end
         
         function sendP(obj, jointPos)
             % Sends directly to the position publisher
@@ -128,6 +79,47 @@ classdef HansCuteHAL < handle
             % send data to the robot at.
             obj.positionMsg.Data = jointPos;
             obj.positionPub.send(obj.positionMsg);
+        end
+        
+        function movePTraj(obj, traj, frequency, accuracy)
+            % Moves the robot through the list of joint positions
+            % Frequency is the frequency at which the robot should move
+            % through the points provided (positions per second).
+            
+            % Use a rate limiter to send the messages consistently
+            rateLimiter = rateControl(frequency);
+            rateLimiter.OverrunAction = 'slip';
+            % Profiler
+            p = RateProfiler;
+            count = 0;
+            % Send each point in the trajectory
+            rateLimiter.reset();
+            p.start;
+            for i = 1:(size(traj,1))
+                % Load the joint positions into the message
+                if i < size(traj,1)
+                    obj.positionMsg.Data = traj(i,:);
+                else
+                    obj.positionMsg.Data = traj(size(traj,1),:);
+                end
+                % Send the trajectory to the robot
+                obj.positionPub.send(obj.positionMsg);
+                count = count + 1;
+                rateLimiter.waitfor();
+            end
+            % Since the cyton driver is dodgy and takes a while to enter
+            % position, keep sending until we're close enough 
+            error = norm(traj(size(traj,1),:) - obj.getActualJoints);
+            while error > accuracy
+                obj.positionPub.send(obj.positionMsg);
+                count = count + 1;
+                rateLimiter.waitfor();
+                error = norm(traj(size(traj,1),:) - obj.getActualJoints);
+            end
+            % Profiler Results
+            p.toc();
+            p.calcStats(count, frequency);
+            p.showStats();
         end
         
         function sendV(obj, jointVel)
@@ -145,13 +137,14 @@ classdef HansCuteHAL < handle
            % the end of the list but you should include your own one for
            % sanity reasons.
            
-           % Create the messages to send
-           velocityMsg = rosmessage(obj.velocityPub);
            % Make the rate limiter to control the rate we send messages
            rateLimiter = rateControl(frequency);
            rateLimiter.OverrunAction = 'slip';
+           % Profiling
+           p = RateProfiler;
            % Load each of the trajectory points into the message
            rateLimiter.reset();
+           p.start();
            for i = 1:size(traj,1)
                 % Check to see if any of the joint velocities are over the
                 % max.
@@ -159,15 +152,20 @@ classdef HansCuteHAL < handle
                     error("Large joint velocity detected");
                 end
                 % Load the point in the trajetory
-                velocityMsg.Data = traj(i,:);
+                obj.velocityMsg.Data = traj(i,:);
                 % Send the trajectory to the robot.
-                obj.velocityPub.send(velocityMsg);
+                obj.velocityPub.send(obj.velocityMsg);
                 % Rate limiting
                 rateLimiter.waitfor();
            end
-           velocityMsg.Data = zeros(1, size(traj,2));
+           obj.velocityMsg.Data = zeros(1, size(traj,2));
            % Append to the end of the trajectory
-           obj.velocityPub.send(velocityMsg);
+           obj.velocityPub.send(obj.velocityMsg);
+           % Profiling results
+           p.toc();
+           p.calcStats(size(traj,1)+1, frequency);
+           p.showStats();
+           
         end
         
         function joints = getActualJoints(obj)

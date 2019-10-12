@@ -9,17 +9,15 @@ classdef HansCute < handle
         DHParams = ...  % DH Parameters describing the robot geometry
         [
         %   z       x       alpha       range       offset
-            0.120   0       90.00       300.0       0
+            0.150   0       90.00       300.0       0
             0       0       -90.00      210.0       0
-            0.141   0       90.00       300.0       0
-            0       0.072   -90.00      210.0       90.00
-            0       0.072   90.00       210.0       0
+            0.125   0       90.00       300.0       0
+            0       0.065   -90.00      210.0       90.00
+            0       0.068   90.00       210.0       0
             0       0       90.00       210.0       90.00
-            0.130   0       0.0         300.0       180.0
+            0.158   0       0.0         300.0       180.0
         ];    
         nJoints = 7;    % Number of joints in the robot;
-        moveJFrequency = 12;    % Rate at which joint moves should run
-        moveLFrequency = 12;    % Rate at which tool moves should run
         maxJointVel = ...       % Largest movement the robot can make in one time step
             (pi);
         q0 = ...                % Home Position 
@@ -34,6 +32,9 @@ classdef HansCute < handle
         realRobotHAL    % HAL for the actual robot itself
         controller      % Gamepad controller (JoystickJog)
         moveRealRobot   % Hardware State (simulation or actual)
+        RMRCMethod      % Resolved Motion Rate Control Method
+        moveJFrequency	% Rate at which joint moves should run
+        moveLFrequency	% Rate at which tool moves should run
     end
     
     methods
@@ -55,10 +56,10 @@ classdef HansCute < handle
             if nargin < 3
                 crash = true;
             end
-            if norm(double(abs(joints) > deg2rad(obj.DHParams(:,4)/2)))
+            if norm(double(abs(joints) > deg2rad(obj.DHParams(:,4)/2)'))
                 if crash
                     disp('Joint limit overshoot')
-                    rad2deg(abs(joints) - rad2deg(obj.DHParams(:,4)/2))
+                    rad2deg(abs(joints) - deg2rad(obj.DHParams(:,4)/2))
                     error('Joints exceed joint limits!');
                 else
                     valid = false;
@@ -86,6 +87,8 @@ classdef HansCute < handle
             obj.joints = zeros(1, obj.nJoints);
             obj.moveRealRobot = false;
             obj.controller = JoystickJog;
+            obj.moveJFrequency = 15;
+            obj.moveLFrequency = 15;
         end
         
         function connectToHW(obj)
@@ -160,14 +163,15 @@ classdef HansCute < handle
         function jogMode(obj)
             % Puts the robot into jog mode under controller navigation
             % Runs until the stop button is pressed.
-            
             % Rate controller lets us run at a constant rate
             rateLimiter = rateControl(obj.moveLFrequency);
-            rateLimiter.reset();
+            rateLimiter.OverrunAction = 'slip';
             obj.plot();
+            rateLimiter.reset();
             % Profile the timing on this function to see if we can keep
             % up...
-            tic();
+            p = RateProfiler();
+            p.start();
             count = 0;
             while ~obj.controller.getStopStatus()
                 count = count + 1;
@@ -186,12 +190,15 @@ classdef HansCute < handle
                         obj.animate();
                     end
                 else
-                    warning('Motion abandoned, would exceed joint limits');
+                    warning(['Step %d: \nMotion abandoned, would exceed'...
+                        'joint limits.'], count);
                 end
                 rateLimiter.waitfor();
             end
-            lagRate = sprintf('Run Frequency: %.2fHz', count / toc());
-            disp(lagRate);
+            % Profiling Results
+            p.toc()
+            p.calcStats(count, obj.moveLFrequency);
+            p.showStats();
         end
         
         function q = teachPosition(obj)
@@ -200,17 +207,23 @@ classdef HansCute < handle
             % and then once it is pressed again, it is re-energized and the
             % resulting position is returned. 
             
+            disp(['Preparing for teach mode. Press Square to switch off'...
+                ' the motors and move the robot by hand.']);
+            
             % Wait for the button to be pressed
             while ~obj.controller.getTeachStatus
             end
             obj.realRobotHAL.disableRobot();
             % Give time for the button to be released
             pause(0.5);
+            disp(['The robot is now in teach mode, press Square again ' ...
+                'to engage the motors and locate the robot.']);
             % Wait for the button to be pressed again
             while ~obj.controller.getTeachStatus()
             end
             obj.realRobotHAL.enableRobot();
             obj.syncHW();
+            disp('Position locked.');
             q = obj.joints;
         end
         
