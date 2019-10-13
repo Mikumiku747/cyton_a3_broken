@@ -1,10 +1,12 @@
 classdef HansCute < handle
+    %%
     % Han's robotics cute robot class.
     % For use with Peter Corke's Robotics, Vision and Control Toolbox.
     % We inherit from handle because this allows us to modify the robots
     % state and keep those changes preserved in class methods (for example,
     % moveJ will actually change the robot's joints).
     
+    %% DHParams
     properties (Constant)
         DHParams = ...  % DH Parameters describing the robot geometry
         [
@@ -30,8 +32,10 @@ classdef HansCute < handle
             0.2;                % in m/s.
         angularSpeed = ...      % Angular speed during L trajectories (tool rotation speed)
             pi/2;               % in rad/s.
+        workspace = [-1 1 -1 1 -0.3 1];   % Robot workspace
     end
     
+    %% Properties
     properties
         robotModel      % SerialLink object describing the robot
         joints          % Joint Positions
@@ -42,14 +46,51 @@ classdef HansCute < handle
         moveLFrequency	% Rate at which tool moves should run
     end
     
+    %%
     methods
+        %% plotModel
+        function plotModel(self)   %robot,workspace
+            for linkIndex = 0:self.robotModel.n
+                [ faceData, vertexData, plyData{linkIndex + 1} ] =  ...
+                    plyread(['HansLink',num2str(linkIndex),'.ply'],'tri');
+                self.robotModel.faces{linkIndex + 1} = faceData;
+                self.robotModel.points{linkIndex + 1} = vertexData;
+            end
+
+            % Display robot
+            self.robotModel.plot3d(zeros(1,self.robotModel.n),...
+                'noarrow','workspace',self.workspace);
+            hold all
+            if isempty(findobj(get(gca,'Children'),'Type','Light'))
+                camlight
+            end  
+            self.robotModel.delay = 0;
+
+            % Try to correctly colour the arm (if colours are in ply file data)
+            for linkIndex = 0:self.robotModel.n
+                handles = findobj('Tag', self.robotModel.name);
+                h = get(handles,'UserData');
+                try 
+                    h.link(linkIndex+1).Children.FaceVertexCData = ...
+                        [plyData{linkIndex+1}.vertex.red ...
+                        , plyData{linkIndex+1}.vertex.green ...
+                        , plyData{linkIndex+1}.vertex.blue]/255;
+                    h.link(linkIndex+1).Children.FaceColor = 'interp';
+                catch ME_1
+                    disp(ME_1);
+                    continue;
+                end
+            end
+        end
         
+        %% set.joints
         function set.joints(obj, joints)
             % Validate joints on assignment
             obj.validateJoints(joints);
             obj.joints = joints;
         end
         
+        %% valid = validateJoints
         function valid = validateJoints(obj, joints, crash)
             % Validation that the new joint position is within joint limits
             % If no joints are provided the robot's current joints are
@@ -76,6 +117,7 @@ classdef HansCute < handle
             end
         end
         
+        %% HansCute
         function obj = HansCute(name)
             % Creates a new Cyton 300 Robot Object. Default pose is 0
             if nargin < 1
@@ -96,6 +138,7 @@ classdef HansCute < handle
             obj.moveLFrequency = 15;
         end
         
+        %% connectToHW
         function connectToHW(obj)
             % Connects and initialises an actual robot
             
@@ -114,7 +157,7 @@ classdef HansCute < handle
             disp 'Robot ready to operate.'
             obj.moveRealRobot = true;
         end
-        
+        %% syncHW
         function syncHW(obj)
             % Synchronises the model of the robot with the actual running
             % robot.
@@ -122,11 +165,13 @@ classdef HansCute < handle
             obj.animate;
         end
         
+        %% teach
         function teach(obj)
             % Opens a figure with the robot for teaching new poses
             obj.robotModel.teach(obj.joints);
         end
         
+        %% getEndEffectorTransform
         function transform = getEndEffectorTransform(obj, joints)
             % Uses forward kinematics to get the transform of the end
             % effector.
@@ -136,6 +181,7 @@ classdef HansCute < handle
             transform = obj.robotModel.fkine(joints);
         end
         
+        %% getEndEffectorPosition
         function position = getEndEffectorPosition(obj, joints)
             % Uses forward kinematics to get the position of the end
             % effector.
@@ -146,6 +192,7 @@ classdef HansCute < handle
             position = transform(1:3,4);
         end
         
+        %% getJacobian
         function jacobian = getJacobian(obj, joints)
             % Gets the jacobian for a given robot joint position. 
             % If no position is supplied, the current pose is used.
@@ -155,16 +202,19 @@ classdef HansCute < handle
             jacobian = obj.robotModel.jacob0(joints);
         end
         
+        %% plot
         function plot(obj)
             % Plots the robot
             obj.robotModel.plot(obj.joints);
         end
         
+        %% animate
         function animate(obj)
             % Updates the plot of a robot
             obj.robotModel.animate(obj.joints);
         end
         
+        %% jogMode
         function jogMode(obj)
             % Puts the robot into jog mode under controller navigation
             % Runs until the stop button is pressed.
@@ -206,6 +256,7 @@ classdef HansCute < handle
             p.showStats();
         end
         
+        %% teachPosition
         function q = teachPosition(obj)
             % Allows the robot to be hand-guided by disabling the motors.
             % When the guide button is pressed, the robot is de-energized,
@@ -232,6 +283,7 @@ classdef HansCute < handle
             q = obj.joints;
         end
         
+        %% moveJTraj
         function moveJTraj(obj, trajectory)
             % Moves the robot through a set of joint positions
             % The rate limiter means our robot will run at a realistic
@@ -248,6 +300,7 @@ classdef HansCute < handle
             end
         end
         
+        %% planJTraj
         function traj = planJTraj(obj, destTrans, duration, accuracy)
             % Plans a jointspace movement and produces a trajectory
             
@@ -264,11 +317,13 @@ classdef HansCute < handle
             end
         end
         
+        %% planQTraj
         function traj = planQTraj(obj, destQ, duration)
             % Plans a movement directly to another joint position
             traj = jtraj(obj.joints, destQ, duration * obj.moveJFrequency);
         end
         
+        %% moveJ
         function moveJ(obj, dest, duration, accuracy)
             % Plans and moves through a trajectory
             traj = obj.planJTraj(dest, duration, accuracy);
@@ -285,6 +340,7 @@ classdef HansCute < handle
             end
         end
         
+        %% moveQ
         function moveQ(obj, dest, duration, accuracy)
             % Performs a jointspace move on the virtual and real robot
             traj = obj.planQTraj(dest, duration);
@@ -300,7 +356,8 @@ classdef HansCute < handle
                 obj.moveJTraj(traj);
             end
         end
-
+        
+        %% moveLTraj
         function moveLTraj(obj, trajectory)
             % Move through a set of joint velocities
             
@@ -317,6 +374,7 @@ classdef HansCute < handle
             end
         end
         
+        %% planLTraj
         function traj = planLTraj(obj, destTrans, accuracy)
             % Moves the robot to the given position (maintains orientation)
             % through cartesian space. The trajectory is a set of
@@ -378,6 +436,7 @@ classdef HansCute < handle
             end
         end
         
+        %% moveL
         function moveL(obj, destTrans, accuracy)
             % Plans and moves the robot through toolspace
             if (nargin < 4)
@@ -397,6 +456,7 @@ classdef HansCute < handle
             end
         end
         
+        %% distanceTo
         function dist = distanceTo(obj, pos)
             % Gives the distance from the end effector to a given position.
             robotTrans = obj.getEndEffectorTransform;
@@ -404,6 +464,7 @@ classdef HansCute < handle
             dist = norm(pos - robotPos);
         end
         
+        %% waitOrCancel
         function waitOrCancel(obj, time, freq)
             % Waits for a set time, stops if the stop button is pressed
             if nargin < 3
