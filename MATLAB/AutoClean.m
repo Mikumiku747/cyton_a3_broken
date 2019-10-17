@@ -22,11 +22,14 @@ classdef AutoClean < handle
         function obj = AutoClean()
             % Starts the autocleaner
 
+            % Start up the GUI
+            addpath('./app');
+            obj.GUI = assignment_2_app;
+            obj.GUI.cleanerHandle = obj;
             % Plot for the robot
             figure(1)
             obj.robot = HansCute();
             obj.robot.plot()
-            obj.robot.connectToHW();
             % Plot for the camera
             figure(2);
             obj.camera = webcam('EyeToy USB camera Namtai');
@@ -34,8 +37,14 @@ classdef AutoClean < handle
             imshow(obj.im);
             figure(1);
         end
+        
+        function connectRealHardware(obj)
+            % Connects the hardware 
+            obj.robot.connectRealHardware();
+        end
 
         function scaleFactor = CalibrateScale(obj)
+            % Calibrates the scale of objects on the screen
             disp('The camera scaling factor will be calibrated.');
             obj.processImage();
             bpID = input("Enter the ID of the first scale point: ");
@@ -113,5 +122,4 @@ classdef AutoClean < handle
             obj.robot.moveQ(obj.robot.q0, 3, 0.0075);
         end
     end
-
 end

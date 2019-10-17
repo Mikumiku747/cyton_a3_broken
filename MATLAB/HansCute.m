@@ -38,6 +38,7 @@ classdef HansCute < handle
         realRobotHAL    % HAL for the actual robot itself
         controller      % Gamepad controller (JoystickJog)
         moveRealRobot   % Hardware State (simulation or actual)
+        useRealController   % Controller State (keyboard or controller)
         moveJFrequency	% Rate at which joint moves should run
         moveLFrequency	% Rate at which tool moves should run
     end
@@ -91,9 +92,15 @@ classdef HansCute < handle
             obj.robotModel = SerialLink(links, 'name', name);
             obj.joints = zeros(1, obj.nJoints);
             obj.moveRealRobot = false;
-            obj.controller = JoystickJog;
+            obj.useRealController = false;
             obj.moveJFrequency = 15;
             obj.moveLFrequency = 15;
+        end
+        
+        function connectController(obj)
+            % Add the controller
+            obj.controller = JoystickJog();
+            obj.useRealController = true;
         end
         
         function connectToHW(obj)
