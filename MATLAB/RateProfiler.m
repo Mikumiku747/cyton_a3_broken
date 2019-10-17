@@ -1,24 +1,28 @@
 classdef RateProfiler < handle
     % Used for profiling the rate at which a loop runs compared to a target
     % frequency
+    %%
     properties
         startTime       % Used to make a call paired call to toc
         endTime         % Used to record the final elapsed time
         targetFreq      % Goal Frequency
         count           % Number of times the loop was executed
     end
-    
+    %%
     methods
+        %% start
         function start(obj)
             % Records the start of the loop
             obj.startTime = tic;
         end
         
+        %% toc
         function toc(obj)
             % Records the end time of the loop
             obj.endTime = toc(obj.startTime);
         end
         
+        %% calcStats
         function [rate, fraction] = calcStats(obj, count, targetFreq)
             % Calculates the loop statistics
             obj.count = count;
@@ -27,6 +31,7 @@ classdef RateProfiler < handle
             fraction = rate / targetFreq;
         end
         
+        %% showStats
         function showStats(obj)
             % Displays the statistics
             rate = obj.count / obj.endTime;

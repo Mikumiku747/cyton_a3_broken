@@ -30,6 +30,7 @@ classdef HansCute < handle
             0.2;                % in m/s.
         angularSpeed = ...      % Angular speed during L trajectories (tool rotation speed)
             pi/2;               % in rad/s.
+        workspace = [-1 1 -1 1 -0.3 1];   % Robot workspace
     end
     
     properties
@@ -44,6 +45,39 @@ classdef HansCute < handle
     end
     
     methods
+        function plotModel(self)   %robot,workspace
+            for linkIndex = 0:self.robotModel.n
+                [ faceData, vertexData, plyData{linkIndex + 1} ] =  ...
+                    plyread(['HansLink',num2str(linkIndex),'.ply'],'tri');
+                self.robotModel.faces{linkIndex + 1} = faceData;
+                self.robotModel.points{linkIndex + 1} = vertexData;
+            end
+
+            % Display robot
+            self.robotModel.plot3d(zeros(1,self.robotModel.n),...
+                'noarrow','workspace',self.workspace);
+            hold all
+            if isempty(findobj(get(gca,'Children'),'Type','Light'))
+                camlight
+            end  
+            self.robotModel.delay = 0;
+
+            % Try to correctly colour the arm (if colours are in ply file data)
+            for linkIndex = 0:self.robotModel.n
+                handles = findobj('Tag', self.robotModel.name);
+                h = get(handles,'UserData');
+                try 
+                    h.link(linkIndex+1).Children.FaceVertexCData = ...
+                        [plyData{linkIndex+1}.vertex.red ...
+                        , plyData{linkIndex+1}.vertex.green ...
+                        , plyData{linkIndex+1}.vertex.blue]/255;
+                    h.link(linkIndex+1).Children.FaceColor = 'interp';
+                catch ME_1
+                    disp(ME_1);
+                    continue;
+                end
+            end
+        end
         
         function set.joints(obj, joints)
             % Validate joints on assignment
@@ -307,7 +341,7 @@ classdef HansCute < handle
                 obj.moveJTraj(traj);
             end
         end
-
+        
         function moveLTraj(obj, trajectory)
             % Move through a set of joint velocities
             
