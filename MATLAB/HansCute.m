@@ -125,16 +125,10 @@ classdef HansCute < handle
             end
             obj.robotModel = SerialLink(links, 'name', name);
             obj.joints = zeros(1, obj.nJoints);
+            obj.controller = JoystickJog();
             obj.moveRealRobot = false;
-            obj.useRealController = false;
             obj.moveJFrequency = 15;
             obj.moveLFrequency = 15;
-        end
-        
-        function connectController(obj)
-            % Add the controller
-            obj.controller = JoystickJog();
-            obj.useRealController = true;
         end
         
         function connectToHW(obj)
@@ -154,6 +148,7 @@ classdef HansCute < handle
             obj.syncHW();
             disp 'Robot ready to operate.'
             obj.moveRealRobot = true;
+            obj.realRobotHAL.controllerHandle = obj.controller;
         end
         
         function syncHW(obj)
@@ -319,6 +314,9 @@ classdef HansCute < handle
                 obj.realRobotHAL.movePTraj(traj, obj.moveJFrequency, accuracy);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
+                if (obj.controller.getStopStatus())
+                    return
+                end
             else
                 % Move the simulation
                 disp 'Performing simulation move.'
@@ -335,6 +333,9 @@ classdef HansCute < handle
                 obj.realRobotHAL.movePTraj(traj, obj.moveJFrequency, accuracy);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
+                if obj.controller.getStopStatus()
+                    return
+                end
             else
                 % Move the simulation
                 disp 'Performing simulation move.'
@@ -432,6 +433,9 @@ classdef HansCute < handle
                 obj.realRobotHAL.moveVTraj(traj, obj.moveLFrequency);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
+                if obj.controller.getStopStatus()
+                    return
+                end
             else
                 disp 'Performing simulated robot move'
                 obj.moveLTraj(traj);

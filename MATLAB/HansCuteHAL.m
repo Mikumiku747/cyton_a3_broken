@@ -5,7 +5,6 @@ classdef HansCuteHAL < handle
     % converting trajectories to a format which the robot understands, and
     % power controls. 
     
-    %% properties
     properties
         positionPub     % Position Publisher (writer)
         positionMsg     % Position Message (for the above writer)
@@ -16,15 +15,16 @@ classdef HansCuteHAL < handle
         stateSub        % Joint State Subscriber (reader)
         enableCli       % Motor Enable Client (caller)
         homeCli         % Home Robot Client (caller)
+        controllerHandle% Handle to the controller with the stop button
     end
+    
     properties (Constant)
         maxJointVel = ...   % Max value for joint velocities (sanity check)
             pi;           % Max value of 90 degrees per second
     end
     
-    %%
     methods
-        %% HansCuteHAL
+
         function obj = HansCuteHAL()
             % Creates a new hardware connection
             obj.positionPub = rospublisher('/cyton_position_commands');
@@ -38,7 +38,6 @@ classdef HansCuteHAL < handle
             obj.velocityMsg = rosmessage(obj.velocityPub);
         end
         
-        %% enableRobot
         function enableRobot(obj)
             % Enables the motors in the robot.
             enableMotorsMsg = rosmessage(obj.enableCli);
@@ -46,7 +45,6 @@ classdef HansCuteHAL < handle
             obj.enableCli.call(enableMotorsMsg);
         end
         
-        %% disableRobot
         function disableRobot(obj)
             % Disables the motors in the robot.
             % WATCH OUT, the robot may fall if motors are disabled.
@@ -54,19 +52,17 @@ classdef HansCuteHAL < handle
             disableMotorsMsg.TorqueEnable = false;
             obj.enableCli.call(disableMotorsMsg);
         end
-         %% enableClaw
+        
         function enableClaw(obj)
             % Enables the claw motor
             % TODO
         end
         
-        %% disableClaw
         function disableClaw(obj)
             % Disables the claw motor
             % TODO
         end
         
-        %% setClaw
         function setClaw(obj, dist)
             % Sets the claw to the specified jaw distance
             msg = rosmessage(obj.clawPub);
@@ -74,14 +70,12 @@ classdef HansCuteHAL < handle
             obj.clawPub.send(msg);
         end
         
-        %% homeRobot
         function homeRobot(obj)
             % Moves the robot into the home position
             homeRobotMsg = rosmessage(obj.homeCli);
             obj.homeCli.call(homeRobotMsg);
         end
         
-        %% sendP
         function sendP(obj, jointPos)
             % Sends directly to the position publisher
             % This is for when you really need to optimise the speed you
@@ -90,7 +84,6 @@ classdef HansCuteHAL < handle
             obj.positionPub.send(obj.positionMsg);
         end
         
-        %% movePTraj
         function movePTraj(obj, traj, frequency, accuracy)
             % Moves the robot through the list of joint positions
             % Frequency is the frequency at which the robot should move
@@ -116,6 +109,9 @@ classdef HansCuteHAL < handle
                 obj.positionPub.send(obj.positionMsg);
                 count = count + 1;
                 rateLimiter.waitfor();
+                if obj.controllerHandle.getStopStatus()
+                    return;
+                end
             end
             % Since the cyton driver is dodgy and takes a while to enter
             % position, keep sending until we're close enough 
@@ -132,7 +128,6 @@ classdef HansCuteHAL < handle
             p.showStats();
         end
         
-        %% sendV
         function sendV(obj, jointVel)
             % Sends directly to the velocity publisher
             % This is for when you really need to optimise the speed you
@@ -141,7 +136,6 @@ classdef HansCuteHAL < handle
             obj.velocityPub.send(obj.velocityMsg);
         end
         
-        %% moveVTraj
         function moveVTraj(obj, traj, frequency)
            % Apply the given velocities to the robot.
            % traj is a set of velocities each lasting for 1/frequency
@@ -169,6 +163,9 @@ classdef HansCuteHAL < handle
                 obj.velocityPub.send(obj.velocityMsg);
                 % Rate limiting
                 rateLimiter.waitfor();
+                if obj.controllerHandle.getStopStatus()
+                    return;
+                end
            end
            obj.velocityMsg.Data = zeros(1, size(traj,2));
            % Append to the end of the trajectory
@@ -180,7 +177,6 @@ classdef HansCuteHAL < handle
            
         end
         
-        %% getActualJoints
         function joints = getActualJoints(obj)
             % Gets the joint values of the real robot
             jMsg = obj.stateSub.receive;

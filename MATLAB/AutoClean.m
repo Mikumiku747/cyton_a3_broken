@@ -121,5 +121,16 @@ classdef AutoClean < handle
             end
             obj.robot.moveQ(obj.robot.q0, 3, 0.0075);
         end
+        
+        function cleanObjectAuto(obj)
+            % Same as the cleaning function above but automatically works
+            % on points.
+            while (~obj.robot.controller.getStopStatus)
+                obj.processImage();
+                if (size(obj.objects,1) > 1)
+                    obj.cleanobject(1);
+                end
+            end
+        end
     end
 end
