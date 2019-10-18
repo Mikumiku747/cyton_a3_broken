@@ -29,7 +29,7 @@ classdef AutoClean < handle
             % Plot for the robot
             figure(1)
             obj.robot = HansCute();
-            obj.robot.plot()
+            obj.robot.plotModel();
             % Plot for the camera
             figure(2);
             obj.camera = webcam('EyeToy USB camera Namtai');
@@ -77,9 +77,9 @@ classdef AutoClean < handle
         function bp = CalibrateBasePoint(obj)
             % Allows selection of the base point when calibrating the
             % camera
-            disp('The camera base point will be selected.');
+            MsgBox('The camera base point will be selected.');
             obj.processImage();
-            bpID = input('Enter the number of the base point used for plane calibration: ');
+            bpID = inputdlg('Enter the number of the base point used for plane calibration: ', 'Base point Calibration');
             bp = obj.objects(bpID).Centroid;
             obj.cam_base = bp;
         end

@@ -1,4 +1,4 @@
-function obj = Table(xOffset,yOffset,zOffset)
+function obj = Cage(xOffset,yOffset,zOffset)
 
 if nargin < 1
     xOffset = 0;
@@ -13,7 +13,7 @@ if nargin < 3
     zOffset = 0;
 end
 
-[f,v,data] = plyread('table.ply');
+[f,v,data] = plyread('Cage.ply');
 vertexColours = [data.vertex.red, data.vertex.green, data.vertex.blue] / 255;
 obj = trisurf(f,v(:,1)+ xOffset, ...
                 v(:,2)+ yOffset, ...
@@ -21,4 +21,3 @@ obj = trisurf(f,v(:,1)+ xOffset, ...
     'FaceVertexCData',vertexColours,'EdgeColor','interp','EdgeLighting','flat');
 
 end
-

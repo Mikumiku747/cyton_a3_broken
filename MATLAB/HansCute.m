@@ -49,6 +49,7 @@ classdef HansCute < handle
             for linkIndex = 0:self.robotModel.n
                 [ faceData, vertexData, plyData{linkIndex + 1} ] =  ...
                     plyread(['HansLink',num2str(linkIndex),'.ply'],'tri');
+                
                 self.robotModel.faces{linkIndex + 1} = faceData;
                 self.robotModel.points{linkIndex + 1} = vertexData;
             end
@@ -125,7 +126,7 @@ classdef HansCute < handle
             end
             obj.robotModel = SerialLink(links, 'name', name);
             obj.joints = zeros(1, obj.nJoints);
-            obj.controller = JoystickJog();
+    %        obj.controller = JoystickJog();
             obj.moveRealRobot = false;
             obj.moveJFrequency = 15;
             obj.moveLFrequency = 15;
@@ -144,7 +145,7 @@ classdef HansCute < handle
             obj.realRobotHAL.enableClaw();
             obj.realRobotHAL.setClaw(20);
             disp 'Synchronizing plot and simulation.'
-            obj.plot();
+            obj.plotModel();
             obj.syncHW();
             disp 'Robot ready to operate.'
             obj.moveRealRobot = true;
@@ -155,7 +156,7 @@ classdef HansCute < handle
             % Synchronises the model of the robot with the actual running
             % robot.
             obj.joints = obj.realRobotHAL.getActualJoints();
-            obj.animate;
+            %obj.animate;
         end
         
         function teach(obj)
@@ -199,6 +200,7 @@ classdef HansCute < handle
         function animate(obj)
             % Updates the plot of a robot
             obj.robotModel.animate(obj.joints);
+            pause(0.1)
         end
         
         function jogMode(obj)
@@ -207,7 +209,7 @@ classdef HansCute < handle
             % Rate controller lets us run at a constant rate
             rateLimiter = rateControl(obj.moveLFrequency);
             rateLimiter.OverrunAction = 'slip';
-            obj.plot();
+            obj.plotModel();
             rateLimiter.reset();
             % Profile the timing on this function to see if we can keep
             % up...
@@ -275,7 +277,7 @@ classdef HansCute < handle
             rateLimiter = rateControl(obj.moveJFrequency);
             rateLimiter.OverrunAction = 'slip';
             obj.joints = trajectory(1,:);
-            obj.plot();
+            obj.plotModel();
             rateLimiter.reset();
             for i = 2:size(trajectory,1)
                 obj.joints = trajectory(i,:);
@@ -350,7 +352,7 @@ classdef HansCute < handle
             % frequency
             rateLimiter = rateControl(obj.moveLFrequency);
             rateLimiter.OverrunAction = 'slip';
-            obj.plot();
+            obj.plotModel();
             rateLimiter.reset()
             for i = 1:size(trajectory,1)
                 obj.joints = obj.joints + (trajectory(i,:) / obj.moveLFrequency);
