@@ -126,7 +126,7 @@ classdef HansCute < handle
             end
             obj.robotModel = SerialLink(links, 'name', name);
             obj.joints = zeros(1, obj.nJoints);
-    %        obj.controller = JoystickJog();
+            obj.controller = JoystickJog();
             obj.moveRealRobot = false;
             obj.moveJFrequency = 15;
             obj.moveLFrequency = 15;
@@ -316,13 +316,15 @@ classdef HansCute < handle
                 obj.realRobotHAL.movePTraj(traj, obj.moveJFrequency, accuracy);
                 obj.joints = obj.realRobotHAL.getActualJoints();
                 obj.animate();
-                if (obj.controller.getStopStatus())
-                    return
-                end
             else
                 % Move the simulation
                 disp 'Performing simulation move.'
                 obj.moveJTraj(traj);
+                % Note that in the demo, this was on the real part instead
+                % of the sim part, which is why it didn't work. 
+                if (obj.controller.getStopStatus())
+                    return
+                end
             end
         end
         

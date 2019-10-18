@@ -1,25 +1,20 @@
 % This function run when the startButton in the app is pushed
-function startButton(s)
+function startButton(app)
 
-mode = s.mode;
-threshold = s.threshold;
-blob = s.blob;
-
-switch mode
+switch app.mode
     case 1  % AutoClean Mode
-        clean = AutoClean(); % Create a auto cleanobject from AutoClean class
-        clean.connectRealHardware();
-        clean.robot.connectToHW();
-        
+        app.cleanerHandle.cleanObjectAuto();
         
     case 2  % AutoMove Mode
-        move = HansCute();
-        move.connectToHW();
+        x = app.XEditField.value();
+        y = app.YEditField.value();
+        z = app.ZEditField.value();
+        trans = app.cleanerHandle.robot.robotModel.fkine(app.cleanerHandle.robot.joints());
+        trans(1:3,4) = [x y z]';
+        app.cleanerHandle.robot.moveJ(trans);
         
     case 3  % Controller
-        jog = HansCute();
-        jog.connectToHW();
-        jog.jogMode();
+        app.cleanerHandle.robot.jogMode();
         
     otherwise
 end

@@ -40,48 +40,53 @@ classdef AutoClean < handle
         
         function connectRealHardware(obj)
             % Connects the hardware 
-            obj.robot.connectRealHardware();
+            obj.robot.connectToHW();
         end
 
         function scaleFactor = CalibrateScale(obj)
             % Calibrates the scale of objects on the screen
-            disp('The camera scaling factor will be calibrated.');
+            uiwait(msgbox('The camera scaling factor will be calibrated.'));
             obj.processImage();
-            bpID = input("Enter the ID of the first scale point: ");
-            rpID = input("Enter the ID of the second scale point: ");
-            bp = obj.objects(bpID).Centroid;
-            rp = obj.objects(rpID).Centroid;
+            bpID = inputdlg("Enter the ID of the first scale point: ");
+            rpID = inputdlg("Enter the ID of the second scale point: ");
+            bp = obj.objects(str2num(bpID{1})).Centroid;
+            rp = obj.objects(str2num(rpID{1})).Centroid;
             dist = norm(bp - rp);
-            fprintf('The points are %.1f pixels apart.\n', dist);
-            trueDist = double(input("Enter true distance in m: "));
+            uiwait(msgbox(sprintf('The points are %.1f pixels apart.\n', dist)));
+            trueDistText = inputdlg("Enter true distance in m: ");
+            trueDist = str2double(trueDistText{1});
             scaleFactor = (dist / trueDist);
             obj.cam_scale = [1 1] * scaleFactor;
+            uiwait(msgbox('Calibration complete!'));
         end
 
         function CalibratePlane(obj)
             % Calibrate the plane, requires scale
 
             % Get the base point
-            disp('Please calibrate the base point using the robot in teach mode:');
+            uiwait(msgbox('Please calibrate the base point using the robot in teach mode:'));
             obj.cal_base = obj.robot.getEndEffectorTransform(obj.robot.teachPosition());
-            disp('Please calibrate the X Axis endpoint.');
+            uiwait(msgbox('Please calibrate the X Axis endpoint.'));
             obj.cal_xAxis = obj.robot.getEndEffectorTransform(obj.robot.teachPosition());
-            disp('Please calibrate the Y Axis endpoint.');
+            uiwait(msgbox('Please calibrate the Y Axis endpoint.'));
             obj.cal_yAxis = obj.robot.getEndEffectorTransform(obj.robot.teachPosition());
             
             % Create the plane
             obj.plane = PlaneReference(obj.cal_base, obj.cal_xAxis, ...
                 obj.cal_yAxis, obj.cam_scale);
+            uiwait(msgbox('Plane has been successfully calibrated.'));
         end
         
         function bp = CalibrateBasePoint(obj)
             % Allows selection of the base point when calibrating the
             % camera
-            MsgBox('The camera base point will be selected.');
+            uiwait(msgbox('The camera base point will be selected.'));
             obj.processImage();
-            bpID = inputdlg('Enter the number of the base point used for plane calibration: ', 'Base point Calibration');
+            bpIDText = inputdlg('Enter the number of the base point used for plane calibration: ', 'Base point Calibration');
+            bpID = str2double(bpIDText{1});
             bp = obj.objects(bpID).Centroid;
             obj.cam_base = bp;
+            uiwait(msgbox('Camera Base Point Calibration Complete'));
         end
         
         function transform = camToWorld(obj, camcoords)
@@ -127,7 +132,7 @@ classdef AutoClean < handle
             % on points.
             while (~obj.robot.controller.getStopStatus)
                 obj.processImage();
-                if (size(obj.objects,1) > 1)
+                if (size(obj.objects,1) > 0)
                     obj.cleanobject(1);
                 end
             end
